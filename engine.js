@@ -3,6 +3,9 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 const puppeteer = require('puppeteer');
 const { createClient } = require('@supabase/supabase-js');
 
+// --- FORCE GITHUB COMMIT UPDATE ---
+// This comment ensures GitHub recognizes a change and triggers Railway to pull the NEW code.
+
 // 1. Initialize Clients
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_KEY;
@@ -13,7 +16,7 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const model = genAI.getGenerativeModel({ model: 'gemini-1.5-pro' });
 
 async function startEngine() {
-    console.log("Starting Dynamic Livevival Engine...");
+    console.log("Starting Dynamic Livevival Engine... (Version: Gemini 1.5 Pro)");
     
     // 2. Launch Headless Browser (Puppeteer)
     const browser = await puppeteer.launch({
