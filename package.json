@@ -1,0 +1,14 @@
+{
+  "name": "livevival-engine",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node engine.js"
+  },
+  "dependencies": {
+    "@google/genai": "^0.1.2",
+    "@supabase/supabase-js": "^2.42.0",
+    "dotenv": "^16.4.5",
+    "puppeteer": "^22.6.0"
+  }
+}
