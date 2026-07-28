@@ -1,81 +1,121 @@
-import { createClient } from '@supabase/supabase-js';
-import { GoogleGenAI } from '@google/genai';
-import puppeteer from 'puppeteer';
-import * as dotenv from 'dotenv';
+require('dotenv').config();
+const { GoogleGenerativeAI } = require('@google/generative-ai');
+const puppeteer = require('puppeteer');
+const { createClient } = require('@supabase/supabase-js');
 
-dotenv.config();
+// 1. Initialize Clients
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_SERVICE_KEY;
+const supabase = createClient(supabaseUrl, supabaseKey);
 
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+// Initialize Gemini 1.5 Pro 
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const model = genAI.getGenerativeModel({ model: 'gemini-1.5-pro' });
 
-async function runEngine() {
+async function startEngine() {
     console.log("Starting Dynamic Livevival Engine...");
     
-    const browser = await puppeteer.launch({ 
-        headless: true,
-        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'] 
+    // 2. Launch Headless Browser (Puppeteer)
+    const browser = await puppeteer.launch({
+        args: ['--no-sandbox', '--disable-setuid-sandbox'],
+        headless: "new"
     });
-    
     const page = await browser.newPage();
-    let currentStreamUrl = null;
+    
+    // Variables to track state
     let currentMatchId = null;
+    let currentUrl = null;
 
+    // 3. Main Loop: Runs every 5 seconds
     setInterval(async () => {
         try {
-            // 1. Fetch current live match from database
-            const { data: liveMatches } = await supabase
+            // A. Check Supabase for the active LIVE match
+            const { data: matches, error: matchError } = await supabase
                 .from('matches')
                 .select('*')
                 .eq('status', 'live')
                 .limit(1);
 
-            if (!liveMatches || liveMatches.length === 0) {
+            if (matchError) throw matchError;
+
+            // If no match is live, wait and try again next loop
+            if (!matches || matches.length === 0) {
                 console.log("No match currently set to LIVE in Admin Dashboard. Waiting...");
-                return;
+                currentMatchId = null;
+                return; 
             }
 
-            const activeMatch = liveMatches[0];
-
-            // 2. If stream URL changed or new match started, navigate browser
-            if (activeMatch.youtube_url !== currentStreamUrl) {
-                console.log(`New live match detected (${activeMatch.team_a_name} vs ${activeMatch.team_b_name}). Navigating to: ${activeMatch.youtube_url}`);
-                currentStreamUrl = activeMatch.youtube_url;
-                currentMatchId = activeMatch.id;
-                await page.goto(currentStreamUrl, { waitUntil: 'networkidle2' });
+            const liveMatch = matches[0];
+            
+            // B. If a new live match is detected or the URL changed, navigate to it
+            if (liveMatch.id !== currentMatchId || liveMatch.youtube_url !== currentUrl) {
+                console.log(`New live match detected (${liveMatch.team_a} vs ${liveMatch.team_b}). Navigating to: ${liveMatch.youtube_url}`);
+                await page.goto(liveMatch.youtube_url, { waitUntil: 'networkidle2', timeout: 60000 });
+                currentMatchId = liveMatch.id;
+                currentUrl = liveMatch.youtube_url;
+                
+                // Wait a few seconds for the YouTube player UI to settle
+                await new Promise(r => setTimeout(r, 5000));
             }
 
-            // 3. Capture screenshot & process with AI
+            // C. Capture a screenshot frame from the stream
             console.log("Capturing frame...");
             const screenshotBase64 = await page.screenshot({ encoding: 'base64' });
 
-            const response = await ai.models.generateContent({
-                model: 'gemini-3.1-pro',
-                contents: [
-                    {
-                        role: 'user',
-                        parts: [
-                            { inlineData: { mimeType: 'image/jpeg', data: screenshotBase64 } },
-                            { text: 'Analyze this MLBB match screenshot. Return a strict JSON object with these keys: game_time (string), team_a_kills (number), team_b_kills (number), team_a_gold (number), team_b_gold (number), team_a_towers (number), team_b_towers (number), key_events (string, like "Savage" or "Lord Killed", leave empty if none). Only output the JSON, no markdown formatting.' }
-                        ]
-                    }
-                ]
-            });
+            // D. Prompt Gemini 1.5 Pro to extract the scoreboard stats
+            const prompt = `Analyze this Mobile Legends: Bang Bang (MLBB) esports screenshot.
+            Return a JSON object with NO markdown formatting, just the raw JSON, containing these exact keys:
+            - game_time (string, e.g. "12:45")
+            - team_a_kills (number)
+            - team_b_kills (number)
+            - team_a_gold (number)
+            - team_b_gold (number)
+            - team_a_towers (number)
+            - team_b_towers (number)
+            If you can't clearly read a stat, use 0.`;
 
-            const textResponse = response.text().replace(/```json/g, '').replace(/```/g, '').trim();
-            const stats = JSON.parse(textResponse);
+            const imagePart = {
+                inlineData: {
+                    data: screenshotBase64,
+                    mimeType: "image/png"
+                }
+            };
 
-            console.log(`[${activeMatch.team_a_name} vs ${activeMatch.team_b_name}] Extracted Stats:`, stats);
+            const result = await model.generateContent([prompt, imagePart]);
+            const responseText = result.response.text();
+            
+            // Clean markdown blocks if Gemini added them (e.g., ```json ... ```)
+            const cleanJsonString = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+            const extractedStats = JSON.parse(cleanJsonString);
+            
+            console.log(`[${liveMatch.team_a} vs ${liveMatch.team_b}] Extracted Stats:`, extractedStats);
 
-            // 4. Update Supabase
-            await supabase.from('live_game_states').insert({
-                match_id: currentMatchId,
-                ...stats
-            });
+            // E. Push the extracted stats to Supabase for the website to read
+            const { error: upsertError } = await supabase
+                .from('live_game_states')
+                .upsert({
+                    match_id: liveMatch.id,
+                    team_a_name: liveMatch.team_a,
+                    team_b_name: liveMatch.team_b,
+                    game_time: extractedStats.game_time || "00:00",
+                    team_a_kills: extractedStats.team_a_kills || 0,
+                    team_b_kills: extractedStats.team_b_kills || 0,
+                    team_a_gold: extractedStats.team_a_gold || 0,
+                    team_b_gold: extractedStats.team_b_gold || 0,
+                    team_a_towers: extractedStats.team_a_towers || 0,
+                    team_b_towers: extractedStats.team_b_towers || 0,
+                    updated_at: new Date().toISOString()
+                }, { onConflict: 'match_id' });
 
-        } catch (err) {
-            console.error("Engine execution loop error:", err.message);
+            if (upsertError) {
+                 console.error("Error pushing stats to Supabase:", upsertError);
+            }
+
+        } catch (error) {
+            // Catch and log API or parsing errors so the loop doesn't crash entirely
+            console.error("Engine execution loop error:", error?.message || JSON.stringify(error));
         }
-    }, 5000);
+    }, 5000); // 5000ms = 5 seconds
 }
 
-runEngine();
+startEngine();
