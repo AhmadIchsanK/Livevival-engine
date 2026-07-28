@@ -3,20 +3,17 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import puppeteer from 'puppeteer';
 import { createClient } from '@supabase/supabase-js';
 
-// --- ES MODULE UPDATE ---
-// Converted require() to import to match package.json "type": "module"
-
 // 1. Initialize Clients
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-// Initialize Gemini 1.5 Pro 
+// Initialize Gemini 1.5 Flash 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
 
 async function startEngine() {
-    console.log("Starting Dynamic Livevival Engine... (Version: Gemini 1.5 Pro - ESM)");
+    console.log("Starting Dynamic Livevival Engine... (Version: Gemini 1.5 Flash - ESM)");
     
     // 2. Launch Headless Browser (Puppeteer)
     const browser = await puppeteer.launch({
@@ -52,7 +49,7 @@ async function startEngine() {
             
             // B. If a new live match is detected or the URL changed, navigate to it
             if (liveMatch.id !== currentMatchId || liveMatch.youtube_url !== currentUrl) {
-                console.log(`New live match detected (${liveMatch.team_a} vs ${liveMatch.team_b}). Navigating to: ${liveMatch.youtube_url}`);
+                console.log(`New live match detected (${liveMatch.team_a_name} vs ${liveMatch.team_b_name}). Navigating to: ${liveMatch.youtube_url}`);
                 await page.goto(liveMatch.youtube_url, { waitUntil: 'networkidle2', timeout: 60000 });
                 currentMatchId = liveMatch.id;
                 currentUrl = liveMatch.youtube_url;
@@ -65,7 +62,7 @@ async function startEngine() {
             console.log("Capturing frame...");
             const screenshotBase64 = await page.screenshot({ encoding: 'base64' });
 
-            // D. Prompt Gemini 1.5 Pro to extract the scoreboard stats
+            // D. Prompt Gemini 1.5 Flash to extract the scoreboard stats
             const prompt = `Analyze this Mobile Legends: Bang Bang (MLBB) esports screenshot.
             Return a JSON object with NO markdown formatting, just the raw JSON, containing these exact keys:
             - game_time (string, e.g. "12:45")
@@ -91,23 +88,20 @@ async function startEngine() {
             const cleanJsonString = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
             const extractedStats = JSON.parse(cleanJsonString);
             
-            console.log(`[${liveMatch.team_a} vs ${liveMatch.team_b}] Extracted Stats:`, extractedStats);
+            console.log(`[${liveMatch.team_a_name} vs ${liveMatch.team_b_name}] Extracted Stats:`, extractedStats);
 
             // E. Push the extracted stats to Supabase for the website to read
             const { error: upsertError } = await supabase
                 .from('live_game_states')
                 .upsert({
                     match_id: liveMatch.id,
-                    team_a_name: liveMatch.team_a,
-                    team_b_name: liveMatch.team_b,
                     game_time: extractedStats.game_time || "00:00",
                     team_a_kills: extractedStats.team_a_kills || 0,
                     team_b_kills: extractedStats.team_b_kills || 0,
                     team_a_gold: extractedStats.team_a_gold || 0,
                     team_b_gold: extractedStats.team_b_gold || 0,
                     team_a_towers: extractedStats.team_a_towers || 0,
-                    team_b_towers: extractedStats.team_b_towers || 0,
-                    updated_at: new Date().toISOString()
+                    team_b_towers: extractedStats.team_b_towers || 0
                 }, { onConflict: 'match_id' });
 
             if (upsertError) {
