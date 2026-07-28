@@ -5,34 +5,49 @@ import * as dotenv from 'dotenv';
 
 dotenv.config();
 
-// 1. Initialize Connections
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
-// We will update these dynamically from the website in Phase 4!
-const ACTIVE_MATCH_ID = "00000000-0000-0000-0000-000000000000"; 
-const STREAM_URL = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"; // Placeholder URL
-
 async function runEngine() {
-    console.log("Starting Livevival Engine on Railway...");
+    console.log("Starting Dynamic Livevival Engine...");
     
-    // Launch headless browser (Cloud optimized)
     const browser = await puppeteer.launch({ 
         headless: true,
         args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'] 
     });
     
     const page = await browser.newPage();
-    console.log(`Navigating to stream: ${STREAM_URL}`);
-    await page.goto(STREAM_URL, { waitUntil: 'networkidle2' });
+    let currentStreamUrl = null;
+    let currentMatchId = null;
 
-    // The 5-Second Extraction Loop
     setInterval(async () => {
         try {
+            // 1. Fetch current live match from database
+            const { data: liveMatches } = await supabase
+                .from('matches')
+                .select('*')
+                .eq('status', 'live')
+                .limit(1);
+
+            if (!liveMatches || liveMatches.length === 0) {
+                console.log("No match currently set to LIVE in Admin Dashboard. Waiting...");
+                return;
+            }
+
+            const activeMatch = liveMatches[0];
+
+            // 2. If stream URL changed or new match started, navigate browser
+            if (activeMatch.youtube_url !== currentStreamUrl) {
+                console.log(`New live match detected (${activeMatch.team_a_name} vs ${activeMatch.team_b_name}). Navigating to: ${activeMatch.youtube_url}`);
+                currentStreamUrl = activeMatch.youtube_url;
+                currentMatchId = activeMatch.id;
+                await page.goto(currentStreamUrl, { waitUntil: 'networkidle2' });
+            }
+
+            // 3. Capture screenshot & process with AI
             console.log("Capturing frame...");
             const screenshotBase64 = await page.screenshot({ encoding: 'base64' });
 
-            console.log("Sending to Gemini 3.1 Pro...");
             const response = await ai.models.generateContent({
                 model: 'gemini-3.1-pro',
                 contents: [
@@ -45,31 +60,22 @@ async function runEngine() {
                     }
                 ]
             });
-            
-            // Clean the response to ensure perfect JSON
+
             const textResponse = response.text().replace(/```json/g, '').replace(/```/g, '').trim();
             const stats = JSON.parse(textResponse);
 
-            console.log("Extracted Stats:", stats);
+            console.log(`[${activeMatch.team_a_name} vs ${activeMatch.team_b_name}] Extracted Stats:`, stats);
 
-            // Push to Supabase Database
-            const { error } = await supabase
-                .from('live_game_states')
-                .insert({
-                    match_id: ACTIVE_MATCH_ID,
-                    ...stats
-                });
-
-            if (error) {
-                console.error("Database Insert Error:", error);
-            } else {
-                console.log(`Successfully updated database for game time: ${stats.game_time}`);
-            }
+            // 4. Update Supabase
+            await supabase.from('live_game_states').insert({
+                match_id: currentMatchId,
+                ...stats
+            });
 
         } catch (err) {
-            console.error("Engine loop error:", err.message);
+            console.error("Engine execution loop error:", err.message);
         }
-    }, 5000); // 5000 milliseconds = 5 seconds
+    }, 5000);
 }
 
 runEngine();
