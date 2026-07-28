@@ -108,11 +108,11 @@ async function startEngine() {
                  console.error("Error pushing stats to Supabase:", upsertError);
             }
 
-        } catch (error) {
+     } catch (error) {
             // Catch and log API or parsing errors so the loop doesn't crash entirely
             console.error("Engine execution loop error:", error?.message || JSON.stringify(error));
         }
-    }, 5000); // 5000ms = 5 seconds
+    }, 15000); // Changed from 5000ms to 15000ms (15 seconds) to respect API rate limits
 }
 
 startEngine();
