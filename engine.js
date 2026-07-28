@@ -13,7 +13,7 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 
 // Initialize Gemini 1.5 Pro 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: 'gemini-1.5-pro-latest' });
+const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
 
 async function startEngine() {
     console.log("Starting Dynamic Livevival Engine... (Version: Gemini 1.5 Pro - ESM)");
