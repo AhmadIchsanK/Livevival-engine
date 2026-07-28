@@ -10,10 +10,10 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 
 // Initialize Gemini 1.5 Flash 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+const model = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
 
 async function startEngine() {
-    console.log("Starting Dynamic Livevival Engine... (Version: Gemini 1.5 Flash - ESM)");
+    console.log("Starting Dynamic Livevival Engine... (Version: Gemini 3.6 Flash - ESM)");
     
     // 2. Launch Headless Browser (Puppeteer)
     const browser = await puppeteer.launch({
