@@ -12,7 +12,7 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 async function startEngine() {
-    console.log("Starting Dynamic Livevival Engine... (Version: Groq Llama 4 Scout - ESM)");
+    console.log("Starting Dynamic Livevival Engine... (Version: Groq Vision - ESM)");
     
     // 2. Launch Headless Browser (Puppeteer)
     const browser = await puppeteer.launch({
@@ -73,7 +73,7 @@ async function startEngine() {
             - team_b_towers (number)
             If you can't clearly read a stat, use 0.`;
 
-            // Call Groq Llama 4 Scout Vision Model
+            // Call Groq Vision Model
             const chatCompletion = await groq.chat.completions.create({
                 model: "qwen/qwen3.6-27b",
                 messages: [
@@ -95,9 +95,13 @@ async function startEngine() {
 
             const responseText = chatCompletion.choices[0]?.message?.content || "{}";
             
-            // Clean markdown blocks if Llama added them (e.g., ```json ... ```)
-            const cleanJsonString = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-            const extractedStats = JSON.parse(cleanJsonString);
+            // Clean thinking tags, markdown syntax, and extraneous text
+            let cleanText = responseText.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+            cleanText = cleanText.replace(/```json/gi, '').replace(/```/g, '').trim();
+            const jsonMatch = cleanText.match(/\{[\s\S]*\}/);
+            const finalJsonString = jsonMatch ? jsonMatch[0] : cleanText;
+
+            const extractedStats = JSON.parse(finalJsonString);
             
             console.log(`[${liveMatch.team_a_name} vs ${liveMatch.team_b_name}] Extracted Stats:`, extractedStats);
 
