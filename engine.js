@@ -12,20 +12,24 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 async function startEngine() {
-    console.log("Starting Dynamic Livevival Engine... (Version: Groq Vision - ESM)");
+    console.log("Starting Dynamic Livevival Engine... (Version: Groq Vision - 1080p/30s)");
     
     // 2. Launch Headless Browser (Puppeteer)
     const browser = await puppeteer.launch({
         args: ['--no-sandbox', '--disable-setuid-sandbox'],
         headless: "new"
     });
+    
     const page = await browser.newPage();
+    
+    // FIX 1: Set viewport to 1080p so the AI can actually read the small MLBB text
+    await page.setViewport({ width: 1920, height: 1080 });
     
     // Variables to track state
     let currentMatchId = null;
     let currentUrl = null;
 
-    // 3. Main Loop: Runs every 15 seconds to respect rate limits
+    // 3. Main Loop: Runs every 30 seconds to respect Groq's 8,000 TPM limit
     setInterval(async () => {
         try {
             // A. Check Supabase for the active LIVE match
@@ -53,12 +57,16 @@ async function startEngine() {
                 currentMatchId = liveMatch.id;
                 currentUrl = liveMatch.youtube_url;
                 
-                // Wait a few seconds for the YouTube player UI to settle
+                // Wait for the YouTube player UI to settle
                 await new Promise(r => setTimeout(r, 5000));
+                
+                // FIX 2: Simulate a click in the center of the screen to start the video/hide the YouTube UI overlay
+                await page.mouse.click(960, 540);
+                await new Promise(r => setTimeout(r, 2000));
             }
 
             // C. Capture a screenshot frame from the stream
-            console.log("Capturing frame...");
+            console.log("Capturing 1080p frame...");
             const screenshotBase64 = await page.screenshot({ encoding: 'base64' });
 
             // D. Prompt Groq Vision to extract the scoreboard stats
@@ -127,7 +135,7 @@ async function startEngine() {
             // Catch and log API or parsing errors so the loop doesn't crash entirely
             console.error("Engine execution loop error:", error?.message || JSON.stringify(error));
         }
-    }, 15000); // 15000ms = 15 seconds
+    }, 30000); // 30000ms = 30 seconds to stay under 8,000 TPM
 }
 
 startEngine();
