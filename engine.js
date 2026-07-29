@@ -75,7 +75,7 @@ async function startEngine() {
 
             // Call Groq Llama 4 Scout Vision Model
             const chatCompletion = await groq.chat.completions.create({
-                model: "meta-llama/llama-4-scout-17b-16e-instruct",
+                model: "qwen/qwen3.6-27b",
                 messages: [
                     {
                         role: "user",
