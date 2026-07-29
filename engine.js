@@ -12,7 +12,7 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 async function startEngine() {
-    console.log("Starting Dynamic Livevival Engine... (Version: Groq Llama 3.2 Vision - ESM)");
+    console.log("Starting Dynamic Livevival Engine... (Version: Groq Llama 4 Scout - ESM)");
     
     // 2. Launch Headless Browser (Puppeteer)
     const browser = await puppeteer.launch({
@@ -73,9 +73,9 @@ async function startEngine() {
             - team_b_towers (number)
             If you can't clearly read a stat, use 0.`;
 
-            // Call Groq Llama 3.2 Vision Model
+            // Call Groq Llama 4 Scout Vision Model
             const chatCompletion = await groq.chat.completions.create({
-                model: "llama-3.2-90b-vision-preview",
+                model: "meta-llama/llama-4-scout-17b-16e-instruct",
                 messages: [
                     {
                         role: "user",
