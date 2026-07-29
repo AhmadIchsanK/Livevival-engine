@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import Groq from 'groq-sdk';
 import puppeteer from 'puppeteer';
 import { createClient } from '@supabase/supabase-js';
 
@@ -8,12 +8,11 @@ const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-// Initialize Gemini 1.5 Flash 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
+// Initialize Groq SDK
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 async function startEngine() {
-    console.log("Starting Dynamic Livevival Engine... (Version: Gemini 3.6 Flash - ESM)");
+    console.log("Starting Dynamic Livevival Engine... (Version: Groq Llama 3.2 Vision - ESM)");
     
     // 2. Launch Headless Browser (Puppeteer)
     const browser = await puppeteer.launch({
@@ -26,7 +25,7 @@ async function startEngine() {
     let currentMatchId = null;
     let currentUrl = null;
 
-    // 3. Main Loop: Runs every 5 seconds
+    // 3. Main Loop: Runs every 15 seconds to respect rate limits
     setInterval(async () => {
         try {
             // A. Check Supabase for the active LIVE match
@@ -62,7 +61,7 @@ async function startEngine() {
             console.log("Capturing frame...");
             const screenshotBase64 = await page.screenshot({ encoding: 'base64' });
 
-            // D. Prompt Gemini 1.5 Flash to extract the scoreboard stats
+            // D. Prompt Groq Vision to extract the scoreboard stats
             const prompt = `Analyze this Mobile Legends: Bang Bang (MLBB) esports screenshot.
             Return a JSON object with NO markdown formatting, just the raw JSON, containing these exact keys:
             - game_time (string, e.g. "12:45")
@@ -74,17 +73,29 @@ async function startEngine() {
             - team_b_towers (number)
             If you can't clearly read a stat, use 0.`;
 
-            const imagePart = {
-                inlineData: {
-                    data: screenshotBase64,
-                    mimeType: "image/png"
-                }
-            };
+            // Call Groq Llama 3.2 Vision Model
+            const chatCompletion = await groq.chat.completions.create({
+                model: "llama-3.2-90b-vision-preview",
+                messages: [
+                    {
+                        role: "user",
+                        content: [
+                            { type: "text", text: prompt },
+                            {
+                                type: "image_url",
+                                image_url: {
+                                    url: `data:image/png;base64,${screenshotBase64}`
+                                }
+                            }
+                        ]
+                    }
+                ],
+                temperature: 0,
+            });
 
-            const result = await model.generateContent([prompt, imagePart]);
-            const responseText = result.response.text();
+            const responseText = chatCompletion.choices[0]?.message?.content || "{}";
             
-            // Clean markdown blocks if Gemini added them (e.g., ```json ... ```)
+            // Clean markdown blocks if Llama added them (e.g., ```json ... ```)
             const cleanJsonString = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
             const extractedStats = JSON.parse(cleanJsonString);
             
@@ -108,11 +119,11 @@ async function startEngine() {
                  console.error("Error pushing stats to Supabase:", upsertError);
             }
 
-     } catch (error) {
+        } catch (error) {
             // Catch and log API or parsing errors so the loop doesn't crash entirely
             console.error("Engine execution loop error:", error?.message || JSON.stringify(error));
         }
-    }, 15000); // Changed from 5000ms to 15000ms (15 seconds) to respect API rate limits
+    }, 15000); // 15000ms = 15 seconds
 }
 
 startEngine();
